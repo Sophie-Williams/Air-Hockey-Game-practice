@@ -1,4 +1,9 @@
 /*
+OpenCV 2.4.7 or else edition is needed
+opencv_core247.dll
+opencv_highgui247.dll
+opencv_imgproc247.dll
+
 haven't finish...
 by J.S.Y.Chenkerymiowstone
 */
