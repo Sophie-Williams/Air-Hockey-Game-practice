@@ -1,11 +1,11 @@
 /*
-OpenCV 2.4.7 or else edition is needed
-opencv_core247.dll
-opencv_highgui247.dll
-opencv_imgproc247.dll
-
-haven't finish...
-by J.S.Y.Chenkerymiowstone
+	OpenCV 2.4.7 or else edition is needed
+	opencv_core247.dll
+	opencv_highgui247.dll
+	opencv_imgproc247.dll
+	
+	haven't finish...
+	by J.S.Y.Chenkerymiowstone
 */
 
 # include <stdio.h>
@@ -22,9 +22,11 @@ by J.S.Y.Chenkerymiowstone
 # define bound	20
 # define wall	130
 # define DT		0.03
-# define dampw	0.8
+# define dampw	0.7
 # define damph	1.0
-# define vmax	1000 
+# define vmax	1500
+# define criticr	(winx/2-wall-bound)
+# define rotatbox	140
 
 # define cosd(x) cos(3.1415926*(x)/180.0)
 # define sind(x) sin(3.1415926*(x)/180.0)
@@ -38,11 +40,14 @@ by J.S.Y.Chenkerymiowstone
 void easymouse(int event, int x, int y, int flag, void *imgv);
 void preprocessing(char *windowname, IplImage **base, IplImage **fr, IplImage **fr0);
 void initialize(struct timeval *past);
+void pausestate(struct timeval *past);
 void easyplot(IplImage *fr, IplImage *fr0);
+float time_interval(struct timeval *past);
 void easyupdate(struct timeval *past);
 void user_update();
 void com_update();
 void ball_update(float dt);
+
 int check_wall_reflection(float dt, float *w_progress);
 int check_handle_collision(float dt, float *progress, CvPoint2D32f uv, CvPoint2D32f cv);
 int collide_moment(float rpx, float rpy, float pr, float rvx, float rvy, float dt, float *progress);
@@ -52,6 +57,14 @@ void velocity_correction(int w_flag, float w_progress, int h_flag, float h_progr
 CvPoint2D32f mp, upc, up0c, cpc, cp0c, gpc, bpc, bp0c, bv;
 int click, com_change_goal;
 int score[2];
+int explosr;
+IplImage *scoretext1, *scoretext2;
+CvFont fontline, fontlight;
+CvRect scoreroi1 = cvRect(winx-bound-winx/3, winy/2-winy/4, rotatbox, rotatbox);
+CvRect scoreroi2 = cvRect(winx-bound-winx/3, winy/2+winy/50, rotatbox, rotatbox);
+CvPoint pbuttonp = cvPoint(winx-bound-winx/7,winy/2);
+
+int pauseflag, restartflag, escflag;
 
 CvSize winsz = cvSize(winx, winy);
 CvScalar white	= CV_RGB(255, 255, 255);
@@ -70,42 +83,72 @@ int wallc = wall-r0;
 
 int main()
 {
+	char key;
 	char windowname[] = "Table Hockey Little Game!";
 	IplImage *base, *fr, *fr0;
 	preprocessing(windowname, &base, &fr, &fr0);
 	
 	struct timeval past;
-	initialize(&past);
-	do {
-		cvCopy(base, fr, NULL);
-		//printf("%5d%5d%5d\n", mp.x, mp.y, click);
-		//printf("%20.6f\n", dt);
-		easyupdate(&past);
-		easyplot(fr, fr0);
-		cvShowImage(windowname, fr);
-	} while( cvWaitKey(3)!=27 );
+	while(1)
+	{
+		initialize(&past);
+		while(explosr<criticr && !restartflag && !escflag)
+		{
+			cvCopy(base, fr, NULL);
+			easyupdate(&past);
+			easyplot(fr, fr0);
+			cvShowImage(windowname, fr);
+		}
+		if(escflag) break;
+		if(bpc.y<0) score[1]++;
+		else score[0]++;
+		if(restartflag) {
+			restartflag = 0;
+			score[0] = 0;
+			score[1] = 0;
+		}
+	}
 	
 	cvDestroyWindow(windowname);
 	cvReleaseImage(&base);
 	cvReleaseImage(&fr);
 	cvReleaseImage(&fr0);
+	cvReleaseImage(&scoretext1);
+	cvReleaseImage(&scoretext2);
 	return 0;
 }
 
 void easymouse(int event, int x, int y, int flag, void *imgv)
 {
 	mp = cvPoint2D32f(x, y);
-	click = (event==CV_EVENT_LBUTTONDOWN);
+	if(!pauseflag) {
+		if(sqr(pbuttonp.x-x)+sqr(pbuttonp.y-y)<sqr(r1+33)) {
+			if(event==CV_EVENT_LBUTTONDOWN) pauseflag = 1;
+		}
+	}
 }
 
 
 void preprocessing(char *windowname, IplImage **base, IplImage **fr, IplImage **fr0)
 {
+	int sep, thk1, thk2, fonttype, fthkline, fthklight;
+	CvPoint p1, p2;
+	CvScalar bcolor;
+	
 	srand(time(NULL));
 	// point postion
 	mp  = cvPoint2D32f(-100.0, -100.0);
 	upc = cvPoint2D32f(-100.0, -100.0);
-	cpc = cvPoint2D32f(boundw/2, winx/2-bound-wall);
+	cpc = cvPoint2D32f(boundw/2, criticr);
+	
+	// score
+	score[0] = 0;
+	score[1] = 0;
+	
+	// flag
+	pauseflag = 0;
+	restartflag = 0;
+	escflag = 0;
 	
 	// image
 	*base = cvCreateImage(winsz, 8, 3);
@@ -113,13 +156,37 @@ void preprocessing(char *windowname, IplImage **base, IplImage **fr, IplImage **
 	*fr0  = cvCreateImage(winsz, 8, 3);
 	cvNamedWindow(windowname, 1);
 	
+	// score print texture
+	scoretext1 = cvCreateImage(cvSize(rotatbox,rotatbox), 8, 3);
+	scoretext2 = cvCreateImage(cvSize(rotatbox,rotatbox), 8, 3);
+	
+	// font type
+	fonttype = 0;
+	fthkline = 7;
+	fthklight = 2;
+	cvInitFont(&fontline,  fonttype, 1, 2, 0, fthkline,  CV_AA);
+	cvInitFont(&fontlight, fonttype, 1, 2, 0, fthklight, CV_AA);
+	
 	// mouse call
 	cvSetMouseCallback(windowname, easymouse, (void *)*base);
 
+
+	p1 = cvPoint(winx/2,bound);
+	cvCircle(*base, p1, criticr, white, 1, CV_AA, 0);
+	p1 = cvPoint(winx/2,winy-bound);
+	cvCircle(*base, p1, criticr, white, 1, CV_AA, 0);
+	
+	p1 = cvPoint(0,0);
+	p2 = cvPoint(winx,0);
+	cvLine(*base, p1, p2, CV_RGB(0,0,0), 30, CV_AA, 0);
+	p1 = cvPoint(0,winy);
+	p2 = cvPoint(winx,winy);
+	cvLine(*base, p1, p2, CV_RGB(0,0,0), 30, CV_AA, 0);
+	
 	// red bound
-	int sep = 8, thk1 = 2, thk2 = 7;
-	CvScalar bcolor = red;
-	CvPoint p1 = cvPoint(bound,bound), p2 = cvPoint(bound,winy/2-sep);
+	sep = 8, thk1 = 2, thk2 = 7;
+	bcolor = red;
+	p1 = cvPoint(bound,bound), p2 = cvPoint(bound,winy/2-sep);
 	cvLine(*base, p1, p2, bcolor, thk2, CV_AA, 0);
 	cvLine(*base, p1, p2,  white, thk1, CV_AA, 0);
 	p2 = cvPoint(bound+wall,bound);
@@ -150,19 +217,15 @@ void preprocessing(char *windowname, IplImage **base, IplImage **fr, IplImage **
 	cvLine(*base, p1, p2, bcolor, thk2, CV_AA, 0);
 	cvLine(*base, p1, p2,  white, thk1, CV_AA, 0);
 
+	p1 = cvPoint(winx/2,winy/2);
+	cvCircle(*base, p1, criticr, white, 1, CV_AA, 0);
+	
 	p1 = cvPoint(winx-bound-2*sep,winy/2), p2 = cvPoint(bound+2*sep,winy/2);
 	cvLine(*base, p1, p2, white, 1, CV_AA, 0);
 	
-	thk1 = 1;
-	p1 = cvPoint(winx/2,winy/2);
-	cvCircle(*base, p1, winx/2-bound-wall, white, thk1, CV_AA, 0);
-	p1 = cvPoint(winx/2,bound);
-	cvCircle(*base, p1, winx/2-bound-wall, white, thk1, CV_AA, 0);
-	p1 = cvPoint(winx/2,winy-bound);
-	cvCircle(*base, p1, winx/2-bound-wall, white, thk1, CV_AA, 0);
-	
+	// pause button
 	thk1 = 5;
-	p1 = cvPoint(winx-bound-winx/7,winy/2);
+	p1 = pbuttonp;
 	cvCircle(*base, p1, 33, CV_RGB(0,0,0), -1, CV_AA, 0);
 	cvCircle(*base, p1, 33, white, thk1, CV_AA, 0);
 	p1 = cvPoint(winx-bound-winx/7-sep,winy/2-2*sep);
@@ -171,42 +234,149 @@ void preprocessing(char *windowname, IplImage **base, IplImage **fr, IplImage **
 	p1 = cvPoint(winx-bound-winx/7+sep,winy/2-2*sep);
 	p2 = cvPoint(winx-bound-winx/7+sep,winy/2+2*sep);
 	cvLine(*base, p1, p2,  white, thk1, CV_AA, 0);
+	p1 = cvPoint(winx-bound-winx/7,winy/2-2*sep);
+	p2 = cvPoint(winx-bound-winx/7,winy/2+2*sep);
+	cvLine(*base, p1, p2, CV_RGB(0,0,0), 9, CV_AA, 0);
 }
 
 
 void initialize(struct timeval *past)
 {
+	char scorechar[10];
+	CvMat *rot_mat = cvCreateMat(2, 3, CV_32FC1);
+	
 	gettimeofday(past, NULL);
+	
+	// goal of computer handle
 	gpc = cpc;
 	com_change_goal = 0;
+	
+	// ball positon
 	bpc = cvPoint2D32f(boundw+r0-winx/7,boundh/2);
+	
+	// ball velocity
 	bv.x = 0;// 2004;
 	bv.y = 0;//1000;
+	
+	// explosion effect
+	explosr = 0;
+	
+	// score texture (computer)
+	cvSetZero(scoretext1);
+	cv2DRotationMatrix(cvPoint2D32f(rotatbox/2,rotatbox/2), -90.0, 1.0, rot_mat);
+	if(score[0]>99) score[0] = 99;
+	sprintf(scorechar, "%2d", score[0]);
+	cvPutText(scoretext1, scorechar, cvPoint(rotatbox/3,rotatbox/2), &fontline,   blue);
+	cvPutText(scoretext1, scorechar, cvPoint(rotatbox/3,rotatbox/2), &fontlight, white);
+	cvWarpAffine(scoretext1, scoretext1, rot_mat);
+	
+	// score texture (user)
+	cvSetZero(scoretext2);
+	if(score[1]>99) score[1] = 99;
+	sprintf(scorechar, "%d", score[1]);
+	cvPutText(scoretext2, scorechar, cvPoint(rotatbox/3,rotatbox/2), &fontline,   blue);
+	cvPutText(scoretext2, scorechar, cvPoint(rotatbox/3,rotatbox/2), &fontlight, white);
+	cvWarpAffine(scoretext2, scoretext2, rot_mat);
+}
+
+
+void pausestate(struct timeval *past)
+{
+	// check whether key something or not
+	char key;
+	key = cvWaitKey(3);
+	if(key==27) escflag = 1;
+	else if(key=='r' || key=='R') restartflag = 1;
+	else if(key==' ') pauseflag = 1;
+	// pause loop
+	if(pauseflag) {
+		while(pauseflag) {
+			key = cvWaitKey(3);
+			if(key==27) {
+				escflag   = 1;
+				pauseflag = 0;
+			}
+			else if(key=='r' || key=='R') {
+				restartflag = 1;
+				pauseflag = 0;
+			}
+			else if(key==' ') {
+				pauseflag = !pauseflag;
+			}
+		}
+		time_interval(past);
+	}
 }
 
 
 void easyplot(IplImage *fr, IplImage *fr0)
 {
-	int rmean = 0.5*(r1+r2), rthick = r1-r2;
-	CvPoint up, cp, bp;
+	int rmean = 0.5*(r1+r2), rthick = r1-r2, thk1, thk2, sep;
+	CvPoint up, cp, bp, p1, p2;
 	
 	up.x = coo2pix(upc.x);
 	up.y = coo2pix(upc.y);
+	
+	// pause button
+	p1 = pbuttonp;
+	if(sqr(p1.x-up.x)+sqr(p1.y-up.y)<sqr(r1+33)) {
+		sep = 8;
+		thk1 = 5;
+		thk2 = 2;
+		cvCircle(fr, p1, 33, yellow, thk1, CV_AA, 0);
+		cvCircle(fr, p1, 33,  white, thk2, CV_AA, 0);
+		p1 = cvPoint(winx-bound-winx/7-sep,winy/2-2*sep);
+		p2 = cvPoint(winx-bound-winx/7-sep,winy/2+2*sep);
+		cvLine(fr, p1, p2,  yellow, thk1, CV_AA, 0);
+		cvLine(fr, p1, p2,   white, thk2, CV_AA, 0);
+		p1 = cvPoint(winx-bound-winx/7+sep,winy/2-2*sep);
+		p2 = cvPoint(winx-bound-winx/7+sep,winy/2+2*sep);
+		cvLine(fr, p1, p2,  yellow, thk1, CV_AA, 0);
+		cvLine(fr, p1, p2,   white, thk2, CV_AA, 0);
+		p1 = cvPoint(winx-bound-winx/7,winy/2-2*sep);
+		p2 = cvPoint(winx-bound-winx/7,winy/2+2*sep);
+		cvLine(fr, p1, p2, CV_RGB(0,0,0), 9, CV_AA, 0);
+	}
+	
+	// user handle
 	cvCircle(fr, up, rmean,   red, rthick+2, CV_AA, 0);
 	cvCircle(fr, up, rmean, white, rthick-4, CV_AA, 0);
 	
+	// computer handle
 	cp.x = coo2pix(cpc.x);
 	cp.y = coo2pix(cpc.y);
 	cvCircle(fr, cp, rmean, green, rthick+2, CV_AA, 0);
 	cvCircle(fr, cp, rmean, white, rthick-4, CV_AA, 0);
 	
+	// ball
 	bp.x = coo2pix(bpc.x);
 	bp.y = coo2pix(bpc.y);
-	cvCircle(fr, bp, r0,  white, -1, CV_AA, 0);
-	cvCircle(fr, bp, r0,   blue, 3, CV_AA, 0);
+	if(bp.y>winy+r0) {
+		cvCircle(fr, cvPoint(winx/2,winy-bound), criticr, CV_RGB(150,150,150), 10, CV_AA, 0);
+		cvCircle(fr, cvPoint(winx/2,winy-bound), explosr, CV_RGB(150,150,150), criticr-explosr, CV_AA, 0);
+		explosr+=7;
+	}
+	else if(bp.y<-r0) {
+		cvCircle(fr, cvPoint(winx/2,bound), criticr, CV_RGB(150,150,150), 10, CV_AA, 0);
+		cvCircle(fr, cvPoint(winx/2,bound), explosr, CV_RGB(150,150,150), criticr-explosr, CV_AA, 0);
+		explosr+=7;
+	}
+	else {
+		cvCircle(fr, bp, r0,  white, -1, CV_AA, 0);
+		cvCircle(fr, bp, r0,   blue, 3, CV_AA, 0);
+	}
+	
 	// blur processing
 	cvSmooth(fr, fr, CV_BLUR, 15, 15, 0.0, 0.0);
-	cvAddWeighted(fr0, 0.3, fr, 1.4, 0.0, fr);
+	cvAddWeighted(fr0, 0.55, fr, 1.0, -10.0, fr);
+	
+	// score
+	cvSetImageROI(fr, scoreroi1);
+	cvAdd(fr, scoretext1, fr);
+	cvSetImageROI(fr, scoreroi2);
+	cvAdd(fr, scoretext2, fr);
+	cvResetImageROI(fr);
+	cvSmooth(fr, fr, CV_BLUR, 5, 5, 0.0, 0.0);
 	
 	cvCopy(fr, fr0);
 }
@@ -225,6 +395,7 @@ float time_interval(struct timeval *past)
 void easyupdate(struct timeval *past)
 {
 	float dt = time_interval(past);
+	pausestate(past);
 	user_update();
 	com_update();
 	ball_update(dt);
@@ -288,16 +459,21 @@ void user_update()
 
 void com_update()
 {
-	float thresholdy, track_rate = 0.3;
+	float thresholdy, track_rate = 0.2;
 	int through;
 	cp0c = cpc;
-	if(com_change_goal && bv.y<=0) {
+	thresholdy = boundh/2-r1;
+	if(com_change_goal && thresholdy>bpc.y) {
 		com_change_goal = 0;
-		thresholdy = boundh/2-r1;
-		if(thresholdy>bpc.y) thresholdy = bpc.y;
-		gpc.y = r1+rand()%((int)thresholdy-r1);
-		if(bv.y==0) gpc.x = bpc.x;
+		
+		thresholdy = bpc.y;
+		
+		if(bv.y>-150) {
+			gpc.x = bpc.x;
+			gpc.y = bpc.y;
+		}
 		else {
+			gpc.y = r1+rand()%((int)thresholdy-r1);
 			gpc.x = bpc.x + bv.x*(bpc.y-gpc.y)/(-bv.y);
 			through = gpc.x/boundw;
 			gpc.x = Abs( (through+through%2)*boundw-gpc.x );
@@ -305,7 +481,7 @@ void com_update()
 		}
 	}
 	else if(bpc.y>boundh/2 && bv.y>=0) {
-		gpc = cvPoint2D32f(boundw/2, winx/2-bound-wall);
+		gpc = cvPoint2D32f(boundw/2, criticr);
 	}
 	cpc.x += track_rate*(gpc.x-cpc.x);
 	cpc.y += track_rate*(gpc.y-cpc.y);
