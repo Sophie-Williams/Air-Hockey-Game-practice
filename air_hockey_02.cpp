@@ -27,6 +27,9 @@
 # define vmax	1500
 # define criticr	(winx/2-wall-bound)
 # define rotatbox	140
+# define buttonr	33
+# define buttonx	100
+# define buttony	50
 
 # define cosd(x) cos(3.1415926*(x)/180.0)
 # define sind(x) sin(3.1415926*(x)/180.0)
@@ -40,30 +43,32 @@
 void easymouse(int event, int x, int y, int flag, void *imgv);
 void preprocessing(char *windowname, IplImage **base, IplImage **fr, IplImage **fr0);
 void initialize(struct timeval *past);
-void pausestate(struct timeval *past);
 void easyplot(IplImage *fr, IplImage *fr0);
 float time_interval(struct timeval *past);
-void easyupdate(struct timeval *past);
+void pausestate(struct timeval *past, IplImage *fr);
 void user_update();
 void com_update();
 void ball_update(float dt);
 
+void plot_circular_button(IplImage *fr, CvScalar color);
 int check_wall_reflection(float dt, float *w_progress);
 int check_handle_collision(float dt, float *progress, CvPoint2D32f uv, CvPoint2D32f cv);
 int collide_moment(float rpx, float rpy, float pr, float rvx, float rvy, float dt, float *progress);
 CvPoint2D32f collide_velocity_change(float rpx, float rpy, float rvx, float rvy);
 void velocity_correction(int w_flag, float w_progress, int h_flag, float h_progress, CvPoint2D32f uv, CvPoint2D32f cv, float *dt);
 
+char windowname[] = "Table Hockey Little Game!";
 CvPoint2D32f mp, upc, up0c, cpc, cp0c, gpc, bpc, bp0c, bv;
 int click, com_change_goal;
 int score[2];
 int explosr;
-IplImage *scoretext1, *scoretext2;
+IplImage *scoretext1, *scoretext2, *pausetext, *pausefr;
 CvFont fontline, fontlight;
 CvRect scoreroi1 = cvRect(winx-bound-winx/3, winy/2-winy/4, rotatbox, rotatbox);
 CvRect scoreroi2 = cvRect(winx-bound-winx/3, winy/2+winy/50, rotatbox, rotatbox);
 CvPoint pbuttonp = cvPoint(winx-bound-winx/7,winy/2);
-
+CvPoint rbutton1 = cvPoint(winx/6, winy/3);
+CvPoint rbutton3 = cvPoint(rbutton1.x+buttonx, rbutton1.y+buttony);
 int pauseflag, restartflag, escflag;
 
 CvSize winsz = cvSize(winx, winy);
@@ -84,24 +89,32 @@ int wallc = wall-r0;
 int main()
 {
 	char key;
-	char windowname[] = "Table Hockey Little Game!";
 	IplImage *base, *fr, *fr0;
+	float dt;
+	struct timeval past;
+	
 	preprocessing(windowname, &base, &fr, &fr0);
 	
-	struct timeval past;
 	while(1)
 	{
 		initialize(&past);
 		while(explosr<criticr && !restartflag && !escflag)
 		{
 			cvCopy(base, fr, NULL);
-			easyupdate(&past);
 			easyplot(fr, fr0);
+			dt = time_interval(&past);
+			pausestate(&past, fr);
+			user_update();
+			com_update();
+			ball_update(dt);
 			cvShowImage(windowname, fr);
 		}
+		// exit
 		if(escflag) break;
+		// update score
 		if(bpc.y<0) score[1]++;
 		else score[0]++;
+		// restart
 		if(restartflag) {
 			restartflag = 0;
 			score[0] = 0;
@@ -109,12 +122,15 @@ int main()
 		}
 	}
 	
+	// free memory
 	cvDestroyWindow(windowname);
 	cvReleaseImage(&base);
 	cvReleaseImage(&fr);
 	cvReleaseImage(&fr0);
 	cvReleaseImage(&scoretext1);
 	cvReleaseImage(&scoretext2);
+	cvReleaseImage(&pausetext);
+	cvReleaseImage(&pausefr);
 	return 0;
 }
 
@@ -122,7 +138,7 @@ void easymouse(int event, int x, int y, int flag, void *imgv)
 {
 	mp = cvPoint2D32f(x, y);
 	if(!pauseflag) {
-		if(sqr(pbuttonp.x-x)+sqr(pbuttonp.y-y)<sqr(r1+33)) {
+		if(sqr(pbuttonp.x-x)+sqr(pbuttonp.y-y)<sqr(r1+buttonr)) {
 			if(event==CV_EVENT_LBUTTONDOWN) pauseflag = 1;
 		}
 	}
@@ -136,6 +152,7 @@ void preprocessing(char *windowname, IplImage **base, IplImage **fr, IplImage **
 	CvScalar bcolor;
 	
 	srand(time(NULL));
+	
 	// point postion
 	mp  = cvPoint2D32f(-100.0, -100.0);
 	upc = cvPoint2D32f(-100.0, -100.0);
@@ -170,12 +187,11 @@ void preprocessing(char *windowname, IplImage **base, IplImage **fr, IplImage **
 	// mouse call
 	cvSetMouseCallback(windowname, easymouse, (void *)*base);
 
-
+	// gate line
 	p1 = cvPoint(winx/2,bound);
 	cvCircle(*base, p1, criticr, white, 1, CV_AA, 0);
 	p1 = cvPoint(winx/2,winy-bound);
 	cvCircle(*base, p1, criticr, white, 1, CV_AA, 0);
-	
 	p1 = cvPoint(0,0);
 	p2 = cvPoint(winx,0);
 	cvLine(*base, p1, p2, CV_RGB(0,0,0), 30, CV_AA, 0);
@@ -217,26 +233,20 @@ void preprocessing(char *windowname, IplImage **base, IplImage **fr, IplImage **
 	cvLine(*base, p1, p2, bcolor, thk2, CV_AA, 0);
 	cvLine(*base, p1, p2,  white, thk1, CV_AA, 0);
 
+	// intermediate boundary
 	p1 = cvPoint(winx/2,winy/2);
 	cvCircle(*base, p1, criticr, white, 1, CV_AA, 0);
-	
-	p1 = cvPoint(winx-bound-2*sep,winy/2), p2 = cvPoint(bound+2*sep,winy/2);
+	p1 = cvPoint(winx-bound-2*sep,winy/2);
+	p2 = cvPoint(bound+2*sep,winy/2);
 	cvLine(*base, p1, p2, white, 1, CV_AA, 0);
 	
 	// pause button
-	thk1 = 5;
-	p1 = pbuttonp;
-	cvCircle(*base, p1, 33, CV_RGB(0,0,0), -1, CV_AA, 0);
-	cvCircle(*base, p1, 33, white, thk1, CV_AA, 0);
-	p1 = cvPoint(winx-bound-winx/7-sep,winy/2-2*sep);
-	p2 = cvPoint(winx-bound-winx/7-sep,winy/2+2*sep);
-	cvLine(*base, p1, p2,  white, thk1, CV_AA, 0);
-	p1 = cvPoint(winx-bound-winx/7+sep,winy/2-2*sep);
-	p2 = cvPoint(winx-bound-winx/7+sep,winy/2+2*sep);
-	cvLine(*base, p1, p2,  white, thk1, CV_AA, 0);
-	p1 = cvPoint(winx-bound-winx/7,winy/2-2*sep);
-	p2 = cvPoint(winx-bound-winx/7,winy/2+2*sep);
-	cvLine(*base, p1, p2, CV_RGB(0,0,0), 9, CV_AA, 0);
+	plot_circular_button(*base, white);
+	
+	// pause state texture and frame
+	pausefr   = cvCreateImage(winsz, 8, 3);
+	pausetext = cvCreateImage(winsz, 8, 3);
+	cvRectangle(pausetext, rbutton1, rbutton3, white, thk1, CV_AA, 0);
 }
 
 
@@ -280,62 +290,17 @@ void initialize(struct timeval *past)
 }
 
 
-void pausestate(struct timeval *past)
-{
-	// check whether key something or not
-	char key;
-	key = cvWaitKey(3);
-	if(key==27) escflag = 1;
-	else if(key=='r' || key=='R') restartflag = 1;
-	else if(key==' ') pauseflag = 1;
-	// pause loop
-	if(pauseflag) {
-		while(pauseflag) {
-			key = cvWaitKey(3);
-			if(key==27) {
-				escflag   = 1;
-				pauseflag = 0;
-			}
-			else if(key=='r' || key=='R') {
-				restartflag = 1;
-				pauseflag = 0;
-			}
-			else if(key==' ') {
-				pauseflag = !pauseflag;
-			}
-		}
-		time_interval(past);
-	}
-}
-
-
 void easyplot(IplImage *fr, IplImage *fr0)
 {
-	int rmean = 0.5*(r1+r2), rthick = r1-r2, thk1, thk2, sep;
-	CvPoint up, cp, bp, p1, p2;
+	int rmean = 0.5*(r1+r2), rthick = r1-r2;
+	CvPoint up, cp, bp;
 	
 	up.x = coo2pix(upc.x);
 	up.y = coo2pix(upc.y);
 	
 	// pause button
-	p1 = pbuttonp;
-	if(sqr(p1.x-up.x)+sqr(p1.y-up.y)<sqr(r1+33)) {
-		sep = 8;
-		thk1 = 5;
-		thk2 = 2;
-		cvCircle(fr, p1, 33, yellow, thk1, CV_AA, 0);
-		cvCircle(fr, p1, 33,  white, thk2, CV_AA, 0);
-		p1 = cvPoint(winx-bound-winx/7-sep,winy/2-2*sep);
-		p2 = cvPoint(winx-bound-winx/7-sep,winy/2+2*sep);
-		cvLine(fr, p1, p2,  yellow, thk1, CV_AA, 0);
-		cvLine(fr, p1, p2,   white, thk2, CV_AA, 0);
-		p1 = cvPoint(winx-bound-winx/7+sep,winy/2-2*sep);
-		p2 = cvPoint(winx-bound-winx/7+sep,winy/2+2*sep);
-		cvLine(fr, p1, p2,  yellow, thk1, CV_AA, 0);
-		cvLine(fr, p1, p2,   white, thk2, CV_AA, 0);
-		p1 = cvPoint(winx-bound-winx/7,winy/2-2*sep);
-		p2 = cvPoint(winx-bound-winx/7,winy/2+2*sep);
-		cvLine(fr, p1, p2, CV_RGB(0,0,0), 9, CV_AA, 0);
+	if(sqr(pbuttonp.x-up.x)+sqr(pbuttonp.y-up.y)<sqr(r1+buttonr)) {
+		plot_circular_button(fr, yellow);
 	}
 	
 	// user handle
@@ -382,6 +347,39 @@ void easyplot(IplImage *fr, IplImage *fr0)
 }
 
 
+void pausestate(struct timeval *past, IplImage *fr)
+{
+	// check whether key something or not
+	char key;
+	key = cvWaitKey(3);
+	if(key==27) escflag = 1;
+	else if(key=='r' || key=='R') restartflag = 1;
+	else if(key==' ') pauseflag = 1;
+	// pause loop
+	if(pauseflag) {
+		cvAddWeighted(fr, 0.5, pausetext, 1.0, 0.0, fr);
+		while(pauseflag) {
+			cvCopy(fr, pausefr);
+			key = cvWaitKey(10);
+			if(key==27) {
+				escflag   = 1;
+				pauseflag = 0;
+			}
+			else if(key=='r' || key=='R') {
+				restartflag = 1;
+				pauseflag = 0;
+			}
+			else if(key==' ') {
+				pauseflag = !pauseflag;
+			}
+			cvSmooth(pausefr, pausefr, CV_BLUR, 5, 5, 0.0, 0.0);
+			cvShowImage(windowname, pausefr);
+		}
+		time_interval(past);
+	}
+}
+
+
 float time_interval(struct timeval *past)
 {
 	struct timeval now;
@@ -390,15 +388,6 @@ float time_interval(struct timeval *past)
 	dt = (now.tv_sec-past->tv_sec) + (now.tv_usec-past->tv_usec)/1000000.0;
 	*past = now;
 	return dt;
-}
-
-void easyupdate(struct timeval *past)
-{
-	float dt = time_interval(past);
-	pausestate(past);
-	user_update();
-	com_update();
-	ball_update(dt);
 }
 
 
@@ -533,6 +522,27 @@ void ball_update(float dt)
 		printf("\n%d", count);
 	}
 
+}
+
+
+void plot_circular_button(IplImage *fr, CvScalar color)
+{
+	int sep = 8, thk1 = 5, thk2 = 2;
+	CvPoint p1, p2;
+	
+	cvCircle(fr, pbuttonp, buttonr, color, thk1, CV_AA, 0);
+	cvCircle(fr, pbuttonp, buttonr, white, thk2, CV_AA, 0);
+	p1 = cvPoint(winx-bound-winx/7-sep,winy/2-2*sep);
+	p2 = cvPoint(winx-bound-winx/7-sep,winy/2+2*sep);
+	cvLine(fr, p1, p2, color, thk1, CV_AA, 0);
+	cvLine(fr, p1, p2, white, thk2, CV_AA, 0);
+	p1 = cvPoint(winx-bound-winx/7+sep,winy/2-2*sep);
+	p2 = cvPoint(winx-bound-winx/7+sep,winy/2+2*sep);
+	cvLine(fr, p1, p2, color, thk1, CV_AA, 0);
+	cvLine(fr, p1, p2, white, thk2, CV_AA, 0);
+	p1 = cvPoint(winx-bound-winx/7,winy/2-2*sep);
+	p2 = cvPoint(winx-bound-winx/7,winy/2+2*sep);
+	cvLine(fr, p1, p2, CV_RGB(0,0,0), 9, CV_AA, 0);
 }
 
 
