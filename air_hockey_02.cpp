@@ -28,8 +28,8 @@
 # define criticr	(winx/2-wall-bound)
 # define rotatbox	140
 # define buttonr	33
-# define buttonx	100
-# define buttony	50
+# define buttonx	300
+# define buttony	80
 
 # define cosd(x) cos(3.1415926*(x)/180.0)
 # define sind(x) sin(3.1415926*(x)/180.0)
@@ -51,6 +51,7 @@ void com_update();
 void ball_update(float dt);
 
 void plot_circular_button(IplImage *fr, CvScalar color);
+void plot_rectangular_button(IplImage *fr, CvScalar color, int buttonnum);
 int check_wall_reflection(float dt, float *w_progress);
 int check_handle_collision(float dt, float *progress, CvPoint2D32f uv, CvPoint2D32f cv);
 int collide_moment(float rpx, float rpy, float pr, float rvx, float rvy, float dt, float *progress);
@@ -246,7 +247,7 @@ void preprocessing(char *windowname, IplImage **base, IplImage **fr, IplImage **
 	// pause state texture and frame
 	pausefr   = cvCreateImage(winsz, 8, 3);
 	pausetext = cvCreateImage(winsz, 8, 3);
-	cvRectangle(pausetext, rbutton1, rbutton3, white, thk1, CV_AA, 0);
+	plot_rectangular_button(pausetext, white, 1);
 }
 
 
@@ -543,6 +544,25 @@ void plot_circular_button(IplImage *fr, CvScalar color)
 	p1 = cvPoint(winx-bound-winx/7,winy/2-2*sep);
 	p2 = cvPoint(winx-bound-winx/7,winy/2+2*sep);
 	cvLine(fr, p1, p2, CV_RGB(0,0,0), 9, CV_AA, 0);
+}
+
+
+void plot_rectangular_button(IplImage *fr, CvScalar color, int buttonnum)
+{
+	int thklight = 7, thkline = 3, shift = 10;
+	CvPoint fontp;
+	
+	switch(buttonnum)
+	{
+		case 1: {
+			fontp = cvPoint(rbutton1.x+shift, (rbutton1.y+2*rbutton3.y)/3);
+			cvRectangle(fr, rbutton1, rbutton3, color, thklight, CV_AA, 0);
+			cvRectangle(fr, rbutton1, rbutton3, white,  thkline, CV_AA, 0);
+			cvPutText(fr, "Restart (R)", fontp, &fontlight, color);
+			break;
+		}
+			
+	}
 }
 
 
