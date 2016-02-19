@@ -1,5 +1,5 @@
 /*
-	Using OpenCV to create an interface
+	Use OpenCV to create an interface
 	Try to write a code to run the game, and write a BOT to defeat user...
 	
 	OpenCV 2.4.7 or else edition is needed with dynamic link libraries:
@@ -49,6 +49,7 @@
 # define Abs(x)		( (x<0) ? (-(x)) : (x) )
 # define sqr(x)		((x)*(x))
 
+void inform();
 void easymouse(int event, int x, int y, int flag, void *imgv);
 void preprocessing(char *windowname, IplImage **base, IplImage **fr, IplImage **fr0);
 void initialize(struct timeval *past);
@@ -107,6 +108,7 @@ int main()
 	float dt;
 	struct timeval past;
 	
+	inform();
 	preprocessing(windowname, &base, &fr, &fr0);
 	
 	while(1)
@@ -147,6 +149,20 @@ int main()
 	cvReleaseImage(&pausefr);
 	return 0;
 }
+
+
+void inform()
+{
+	printf("\n\n\n");
+	printf("\t Use OpenCV to create an interface.\n");
+	printf("\t Try to write a code to run the game,\n");
+	printf("\t\t and write a BOT to defeat user...\n\n");
+	printf("\t Almost finished...\n");
+	printf("\t There are still several bugs.\n");
+	printf("\t However, I'm too lazy to debug (=w=)...\n\n");
+	printf("\t By J.S.Y.Chenkerymiowstone 2016.2.19");
+}
+
 
 void easymouse(int event, int x, int y, int flag, void *imgv)
 {
@@ -567,9 +583,7 @@ void ball_update(float dt)
 			bv.x *= norm;
 			bv.y *= norm;
 		}
-		printf("\n%d", count);
 	}
-
 }
 
 
