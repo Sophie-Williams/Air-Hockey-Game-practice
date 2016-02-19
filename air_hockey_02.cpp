@@ -1,11 +1,20 @@
 /*
-	OpenCV 2.4.7 or else edition is needed
-	opencv_core247.dll
-	opencv_highgui247.dll
-	opencv_imgproc247.dll
+	Using OpenCV to create an interface
+	Try to write a code to run the game, and write a BOT to defeat user...
 	
-	haven't finish...
-	by J.S.Y.Chenkerymiowstone
+	OpenCV 2.4.7 or else edition is needed with dynamic link libraries:
+		opencv_core247.dll
+		opencv_highgui247.dll
+		opencv_imgproc247.dll
+		
+	Almost finished...
+	There are still several bugs like:
+		1. Ball will "teleports" when ball and user's handle are close to the horizontal wall
+		2. The exe file will shut down when computer's handle rapidly tracks the ball to the corner
+		etc...
+	However, I'm too lazy to debug (=w=)...
+	
+	By J.S.Y.Chenkerymiowstone 2016.2.19
 */
 
 # include <stdio.h>
@@ -14,21 +23,21 @@
 # include "opencv/highgui.h"
 # include "opencv/cv.h"
 
-# define r0		20
-# define r1		30
-# define r2		18
+# define r0	20
+# define r1	30
+# define r2	18
 # define winx	480
 # define winy	640
 # define bound	20
 # define wall	130
-# define DT		0.03
+# define DT	0.03
 # define dampw	0.7
 # define damph	1.0
 # define vmax	1500
 # define criticr	(winx/2-wall-bound)
 # define rotatbox	140
 # define buttonr	33
-# define buttonx	300
+# define buttonx	360
 # define buttony	80
 
 # define cosd(x) cos(3.1415926*(x)/180.0)
@@ -68,8 +77,12 @@ CvFont fontline, fontlight;
 CvRect scoreroi1 = cvRect(winx-bound-winx/3, winy/2-winy/4, rotatbox, rotatbox);
 CvRect scoreroi2 = cvRect(winx-bound-winx/3, winy/2+winy/50, rotatbox, rotatbox);
 CvPoint pbuttonp = cvPoint(winx-bound-winx/7,winy/2);
-CvPoint rbutton1 = cvPoint(winx/6, winy/3);
+CvPoint rbutton1 = cvPoint(winx/8, winy/3);
 CvPoint rbutton3 = cvPoint(rbutton1.x+buttonx, rbutton1.y+buttony);
+CvPoint ebutton1 = cvPoint(rbutton1.x, rbutton3.y+buttony/2);
+CvPoint ebutton3 = cvPoint(ebutton1.x+buttonx, ebutton1.y+buttony);
+CvPoint sbutton1 = cvPoint(ebutton1.x, ebutton3.y+buttony/2);
+CvPoint sbutton3 = cvPoint(sbutton1.x+buttonx, sbutton1.y+buttony);
 int pauseflag, restartflag, escflag;
 
 CvSize winsz = cvSize(winx, winy);
@@ -137,10 +150,29 @@ int main()
 
 void easymouse(int event, int x, int y, int flag, void *imgv)
 {
+	// record mouse position
 	mp = cvPoint2D32f(x, y);
-	if(!pauseflag) {
-		if(sqr(pbuttonp.x-x)+sqr(pbuttonp.y-y)<sqr(r1+buttonr)) {
-			if(event==CV_EVENT_LBUTTONDOWN) pauseflag = 1;
+	// while mouse click
+	if(event==CV_EVENT_LBUTTONDOWN) {
+		if(!pauseflag) {
+			if(sqr(pbuttonp.x-x)+sqr(pbuttonp.y-y)<sqr(r1+buttonr)) {
+				pauseflag = 1;
+			}
+		}
+		else {
+			if(mp.x>rbutton1.x && mp.x<rbutton3.x) {
+				if(mp.y>rbutton1.y && mp.y<rbutton3.y) {
+					restartflag = 1;
+					pauseflag   = 0;
+				}
+				else if(mp.y>ebutton1.y && mp.y<ebutton3.y) {
+					escflag   = 1;
+					pauseflag = 0;
+				}
+				else if(mp.y>sbutton1.y && mp.y<sbutton3.y) {
+					pauseflag = 0;
+				}
+			}
 		}
 	}
 }
@@ -248,6 +280,8 @@ void preprocessing(char *windowname, IplImage **base, IplImage **fr, IplImage **
 	pausefr   = cvCreateImage(winsz, 8, 3);
 	pausetext = cvCreateImage(winsz, 8, 3);
 	plot_rectangular_button(pausetext, white, 1);
+	plot_rectangular_button(pausetext, white, 2);
+	plot_rectangular_button(pausetext, white, 3);
 }
 
 
@@ -361,6 +395,7 @@ void pausestate(struct timeval *past, IplImage *fr)
 		cvAddWeighted(fr, 0.5, pausetext, 1.0, 0.0, fr);
 		while(pauseflag) {
 			cvCopy(fr, pausefr);
+			// check whether key something or not
 			key = cvWaitKey(10);
 			if(key==27) {
 				escflag   = 1;
@@ -372,6 +407,18 @@ void pausestate(struct timeval *past, IplImage *fr)
 			}
 			else if(key==' ') {
 				pauseflag = !pauseflag;
+			}
+			// check mouse position among buttons
+			if(mp.x>rbutton1.x && mp.x<rbutton3.x) {
+				if(mp.y>rbutton1.y && mp.y<rbutton3.y) {
+					plot_rectangular_button(pausefr, yellow, 1);
+				}
+				else if(mp.y>ebutton1.y && mp.y<ebutton3.y) {
+					plot_rectangular_button(pausefr, yellow, 2);
+				}
+				else if(mp.y>sbutton1.y && mp.y<sbutton3.y) {
+					plot_rectangular_button(pausefr, yellow, 3);
+				}
 			}
 			cvSmooth(pausefr, pausefr, CV_BLUR, 5, 5, 0.0, 0.0);
 			cvShowImage(windowname, pausefr);
@@ -549,19 +596,35 @@ void plot_circular_button(IplImage *fr, CvScalar color)
 
 void plot_rectangular_button(IplImage *fr, CvScalar color, int buttonnum)
 {
-	int thklight = 7, thkline = 3, shift = 10;
+	int thkline = 7, thklight = 3, shift = 10;
 	CvPoint fontp;
 	
 	switch(buttonnum)
 	{
 		case 1: {
 			fontp = cvPoint(rbutton1.x+shift, (rbutton1.y+2*rbutton3.y)/3);
-			cvRectangle(fr, rbutton1, rbutton3, color, thklight, CV_AA, 0);
-			cvRectangle(fr, rbutton1, rbutton3, white,  thkline, CV_AA, 0);
-			cvPutText(fr, "Restart (R)", fontp, &fontlight, color);
+			cvRectangle(fr, rbutton1, rbutton3, color, thkline,  CV_AA, 0);
+			cvRectangle(fr, rbutton1, rbutton3, white, thklight, CV_AA, 0);
+			cvPutText(fr, "RESTART (R)", fontp, &fontline,  color);
+			cvPutText(fr, "RESTART (R)", fontp, &fontlight, white);
 			break;
 		}
-			
+		case 2: {
+			fontp = cvPoint(ebutton1.x+shift, (ebutton1.y+2*ebutton3.y)/3);
+			cvRectangle(fr, ebutton1, ebutton3, color, thkline,  CV_AA, 0);
+			cvRectangle(fr, ebutton1, ebutton3, white, thklight, CV_AA, 0);
+			cvPutText(fr, "EXIT (Esc)", fontp, &fontline,  color);
+			cvPutText(fr, "EXIT (Esc)", fontp, &fontlight, white);
+			break;
+		}
+		case 3: {
+			fontp = cvPoint(sbutton1.x+shift, (sbutton1.y+2*sbutton3.y)/3);
+			cvRectangle(fr, sbutton1, sbutton3, color, thkline,  CV_AA, 0);
+			cvRectangle(fr, sbutton1, sbutton3, white, thklight, CV_AA, 0);
+			cvPutText(fr, "START (Space)", fontp, &fontline,  color);
+			cvPutText(fr, "START (Space)", fontp, &fontlight, white);
+			break;
+		}
 	}
 }
 
