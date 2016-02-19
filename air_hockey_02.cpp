@@ -2,6 +2,8 @@
 	Use OpenCV to create an interface
 	Try to write a code to run the game, and write a BOT to defeat user...
 	
+	The game interface design imitates the Google Android game "Glow Hockey".
+	
 	OpenCV 2.4.7 or else edition is needed with dynamic link libraries:
 		opencv_core247.dll
 		opencv_highgui247.dll
@@ -157,6 +159,8 @@ void inform()
 	printf("\t Use OpenCV to create an interface.\n");
 	printf("\t Try to write a code to run the game,\n");
 	printf("\t\t and write a BOT to defeat user...\n\n");
+	printf("\t The game interface design imitates the Google Android game,\n");
+	printf("\t\t\t << Glow Hockey >>\n\n");
 	printf("\t Almost finished...\n");
 	printf("\t There are still several bugs.\n");
 	printf("\t However, I'm too lazy to debug (=w=)...\n\n");
